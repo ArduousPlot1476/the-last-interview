@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Last Interview</title>
+    <link rel="stylesheet" href="/src/styles/ui.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="game-root"></div>
+
+      <div id="hud">
+        <div id="objective">Investigate the lobby. Press <kbd>Tab</kbd> for notebook.</div>
+        <div id="hud-right">
+          <button id="accusation-button" class="accuse-btn hidden" type="button">
+            Make Accusation
+          </button>
+          <div id="controls-hint">
+            <span><kbd>WASD</kbd>/<kbd>Arrows</kbd> move</span>
+            <span><kbd>E</kbd>/<kbd>Space</kbd> interact</span>
+            <span><kbd>Tab</kbd> notebook</span>
+            <span><kbd>Esc</kbd> close</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="dialogue-panel" class="panel hidden" aria-hidden="true">
+        <div class="panel-inner">
+          <div class="panel-header">
+            <span id="dialogue-speaker">Speaker</span>
+            <button id="dialogue-close" class="close-btn" aria-label="Close">×</button>
+          </div>
+          <div class="panel-body">
+            <div id="dialogue-line" class="dialogue-line"></div>
+            <ul id="dialogue-choices" class="dialogue-choices hidden"></ul>
+            <div id="dialogue-evidence" class="evidence-picker hidden">
+              <div id="dialogue-evidence-prompt" class="evidence-prompt"></div>
+              <ul id="dialogue-evidence-list" class="evidence-list"></ul>
+              <div class="evidence-footer">
+                <button id="dialogue-evidence-cancel" class="secondary-btn" type="button">
+                  Never mind
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="panel-footer">
+            <button id="dialogue-leave" class="secondary-btn hidden">Leave</button>
+            <button id="dialogue-next" class="primary-btn">Continue</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="notebook-panel" class="panel hidden" aria-hidden="true">
+        <div class="panel-inner">
+          <div class="panel-header">
+            <span>Investigator's Notebook</span>
+            <button id="notebook-close" class="close-btn" aria-label="Close">×</button>
+          </div>
+          <div class="panel-body">
+            <h3 class="section-title">Case</h3>
+            <div id="notebook-case" class="notebook-case"></div>
+
+            <h3 class="section-title">Open Leads</h3>
+            <ul id="notebook-leads" class="notebook-list"></ul>
+
+            <h3 class="section-title">Suspects</h3>
+            <ul id="notebook-suspects" class="notebook-list"></ul>
+
+            <h3 class="section-title">Evidence Collected</h3>
+            <ul id="notebook-clues" class="notebook-list"></ul>
+
+            <h3 class="section-title">Testimony Recorded</h3>
+            <ul id="notebook-testimony" class="notebook-list"></ul>
+
+            <h3 class="section-title">Contradictions Resolved</h3>
+            <ul id="notebook-contradictions" class="notebook-list"></ul>
+          </div>
+        </div>
+      </div>
+
+      <div id="accusation-panel" class="panel hidden" aria-hidden="true">
+        <div class="panel-inner">
+          <div class="panel-header">
+            <span>Final Accusation</span>
+          </div>
+          <div class="panel-body">
+            <div id="accuse-choose">
+              <p class="accuse-lede">
+                Once you name a suspect, the case is closed. Choose carefully.
+              </p>
+              <ul id="accuse-choose-list" class="accuse-list"></ul>
+              <div class="accuse-footer">
+                <button id="accuse-choose-cancel" class="secondary-btn" type="button">
+                  Not yet
+                </button>
+              </div>
+            </div>
+
+            <div id="accuse-confirm" class="hidden">
+              <p class="accuse-lede">
+                You are about to formally accuse <strong id="accuse-confirm-suspect">—</strong>.
+              </p>
+              <ul id="accuse-confirm-dossier" class="dossier-list"></ul>
+              <div class="accuse-footer">
+                <button id="accuse-confirm-back" class="secondary-btn" type="button">
+                  Back
+                </button>
+                <button id="accuse-confirm-submit" class="primary-btn" type="button">
+                  Name them
+                </button>
+              </div>
+            </div>
+
+            <div id="accuse-ending" class="hidden">
+              <h2 id="accuse-ending-title" class="ending-title">—</h2>
+              <div id="accuse-ending-subtitle" class="ending-subtitle">—</div>
+              <div id="accuse-ending-body" class="ending-body"></div>
+              <div class="accuse-footer">
+                <button id="accuse-ending-restart" class="primary-btn" type="button">
+                  Restart the Case
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="toast" class="toast hidden"></div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
