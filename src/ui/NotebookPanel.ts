@@ -1,15 +1,20 @@
 import { caseData } from "../data/caseData";
+import { contradictions } from "../data/contradictions";
 import type { InvestigationState } from "../systems/InvestigationState";
+import type { TestimonyEntry } from "../types/dialogue";
+
+type TabId = "leads" | "evidence" | "testimony" | "case";
 
 /**
- * DOM controller for the notebook. Renders:
- *   - the static case summary and suspects list
- *   - the dynamic list of open leads/objectives
- *   - collected evidence (clues)
- *   - recorded testimony, grouped by suspect
+ * DOM controller for the notebook. Four tabs over a single panel:
+ *   - Leads:      open objectives + resolved contradictions
+ *   - Evidence:   collected clues
+ *   - Testimony:  statements grouped by suspect, with ⚑ Challenged badges
+ *   - Case:       case summary and suspect profiles
  *
- * Re-renders dynamic sections on every InvestigationState "state-changed"
- * event, but only does DOM work when the panel is actually open.
+ * A persistent progress header above the tabs surfaces at-a-glance counts so
+ * the player can see how close the case is to accusation without hunting.
+ * Re-renders only when the panel is open.
  */
 export class NotebookPanel {
   private readonly root: HTMLElement;
@@ -20,6 +25,13 @@ export class NotebookPanel {
   private readonly testimonyEl: HTMLElement;
   private readonly contradictionsEl: HTMLElement;
   private readonly closeBtn: HTMLButtonElement;
+  private readonly tabButtons: HTMLButtonElement[];
+  private readonly tabPanels: HTMLElement[];
+  private readonly progressClues: HTMLElement;
+  private readonly progressTestimony: HTMLElement;
+  private readonly progressContradictions: HTMLElement;
+  private readonly progressAccuse: HTMLElement;
+  private activeTab: TabId = "leads";
 
   constructor(private readonly state: InvestigationState) {
     this.root = requireEl("#notebook-panel");
@@ -30,14 +42,31 @@ export class NotebookPanel {
     this.testimonyEl = requireEl("#notebook-testimony");
     this.contradictionsEl = requireEl("#notebook-contradictions");
     this.closeBtn = requireEl<HTMLButtonElement>("#notebook-close");
+    this.tabButtons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".notebook-tab")
+    );
+    this.tabPanels = Array.from(
+      document.querySelectorAll<HTMLElement>(".notebook-tab-panel")
+    );
+    this.progressClues = requireEl("#progress-clues");
+    this.progressTestimony = requireEl("#progress-testimony");
+    this.progressContradictions = requireEl("#progress-contradictions");
+    this.progressAccuse = requireEl("#progress-accuse");
 
     this.closeBtn.addEventListener("click", () => this.close());
+    for (const btn of this.tabButtons) {
+      btn.addEventListener("click", () => {
+        const tab = btn.dataset.tab as TabId | undefined;
+        if (tab) this.selectTab(tab);
+      });
+    }
     this.state.on("state-changed", () => {
       if (this.isOpen()) this.renderDynamic();
     });
 
     this.renderStatic();
     this.renderDynamic();
+    this.selectTab(this.activeTab);
   }
 
   isOpen(): boolean {
@@ -58,6 +87,18 @@ export class NotebookPanel {
   close(): void {
     this.root.classList.add("hidden");
     this.root.setAttribute("aria-hidden", "true");
+  }
+
+  private selectTab(tab: TabId): void {
+    this.activeTab = tab;
+    for (const btn of this.tabButtons) {
+      btn.classList.toggle("is-active", btn.dataset.tab === tab);
+    }
+    for (const panel of this.tabPanels) {
+      const match = panel.dataset.tab === tab;
+      panel.classList.toggle("is-active", match);
+      panel.toggleAttribute("hidden", !match);
+    }
   }
 
   // ------- static -------
@@ -86,10 +127,30 @@ export class NotebookPanel {
   // ------- dynamic -------
 
   private renderDynamic(): void {
+    this.renderProgress();
     this.renderLeads();
     this.renderClues();
     this.renderTestimony();
     this.renderContradictions();
+  }
+
+  private renderProgress(): void {
+    const totalClues = caseData.clues.length;
+    const collected = this.state.notebook.listCollected().length;
+    this.progressClues.textContent = `${collected}/${totalClues}`;
+
+    const testimonyCount = this.state.dialogue.listTestimony().length;
+    this.progressTestimony.textContent = String(testimonyCount);
+
+    const totalContradictions = contradictions.length;
+    const resolved = this.state.listResolvedContradictions();
+    const criticalResolved = resolved.filter((c) => c.critical).length;
+    const criticalTotal = contradictions.filter((c) => c.critical).length;
+    this.progressContradictions.textContent = `${resolved.length}/${totalContradictions} (crit ${criticalResolved}/${criticalTotal})`;
+
+    const ready = this.state.canAccuse();
+    this.progressAccuse.textContent = ready ? "Ready" : "Locked";
+    this.progressAccuse.classList.toggle("is-ready", ready);
   }
 
   private renderLeads(): void {
@@ -146,10 +207,13 @@ export class NotebookPanel {
     const entries = this.state.dialogue.listTestimony();
     this.testimonyEl.innerHTML = "";
     if (entries.length === 0) {
-      this.testimonyEl.appendChild(emptyLi("No testimony recorded yet. Press E to talk to a suspect."));
+      const empty = document.createElement("div");
+      empty.className = "notebook-empty";
+      empty.textContent = "No testimony recorded yet. Press E to talk to a suspect.";
+      this.testimonyEl.appendChild(empty);
       return;
     }
-    const bySuspect = new Map<string, typeof entries>();
+    const bySuspect = new Map<string, TestimonyEntry[]>();
     for (const e of entries) {
       const list = bySuspect.get(e.suspectId) ?? [];
       list.push(e);
@@ -158,26 +222,50 @@ export class NotebookPanel {
     for (const suspect of caseData.suspects) {
       const list = bySuspect.get(suspect.id);
       if (!list || list.length === 0) continue;
+      const group = document.createElement("section");
+      group.className = "testimony-group";
+
+      const header = document.createElement("header");
+      header.className = "testimony-group-header";
+      const name = document.createElement("span");
+      name.className = "testimony-group-name";
+      name.textContent = suspect.name;
+      const role = document.createElement("span");
+      role.className = "testimony-group-role";
+      role.textContent = suspect.role;
+      const challengedCount = list.filter((e) =>
+        this.state.dialogue.isTestimonyChallenged(e.id)
+      ).length;
+      header.appendChild(name);
+      header.appendChild(role);
+      if (challengedCount > 0) {
+        const count = document.createElement("span");
+        count.className = "testimony-group-challenged";
+        count.textContent = `${challengedCount} challenged`;
+        header.appendChild(count);
+      }
+      group.appendChild(header);
+
+      const ul = document.createElement("ul");
+      ul.className = "notebook-list testimony-list";
       for (const entry of list) {
         const li = document.createElement("li");
         const challenged = this.state.dialogue.isTestimonyChallenged(entry.id);
         if (challenged) li.classList.add("challenged");
-        const title = document.createElement("span");
-        title.className = "clue-title";
-        title.textContent = suspect.name;
         if (challenged) {
           const badge = document.createElement("span");
-          badge.className = "testimony-badge";
+          badge.className = "testimony-badge challenged";
           badge.textContent = "⚑ Challenged";
-          title.appendChild(document.createTextNode(" "));
-          title.appendChild(badge);
+          li.appendChild(badge);
         }
         const body = document.createElement("div");
+        body.className = "testimony-body";
         body.textContent = entry.statement;
-        li.appendChild(title);
         li.appendChild(body);
-        this.testimonyEl.appendChild(li);
+        ul.appendChild(li);
       }
+      group.appendChild(ul);
+      this.testimonyEl.appendChild(group);
     }
   }
 
@@ -192,9 +280,11 @@ export class NotebookPanel {
     }
     for (const c of resolved) {
       const li = document.createElement("li");
+      li.classList.add("resolved-contradiction");
+      if (c.critical) li.classList.add("critical");
       const title = document.createElement("span");
       title.className = "clue-title";
-      title.textContent = c.critical ? `⚑ ${c.label}` : c.label;
+      title.textContent = c.critical ? `⚑ Critical — ${c.label}` : c.label;
       const body = document.createElement("div");
       body.textContent = c.resolutionSummary;
       li.appendChild(title);

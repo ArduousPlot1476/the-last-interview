@@ -1,4 +1,5 @@
 import { caseData } from "../data/caseData";
+import { contradictions } from "../data/contradictions";
 import type { InvestigationState } from "../systems/InvestigationState";
 import type { Ending } from "../types/contradiction";
 
@@ -6,10 +7,8 @@ import type { Ending } from "../types/contradiction";
  * Terminal panel that runs the accusation flow. Three views inside one modal:
  *   - "choose":  pick a suspect to accuse
  *   - "confirm": dossier of what you have / don't have against them
- *   - "ending":  the narrative outcome; Restart reloads the page
- *
- * Opening the panel disables scene input; closing it re-enables (unless we're
- * already on the ending view, which locks the game).
+ *   - "ending":  the narrative outcome (with a one-line reason explaining
+ *                why this ending, derived from state); Restart reloads.
  */
 export class AccusationPanel {
   private readonly root: HTMLElement;
@@ -26,6 +25,7 @@ export class AccusationPanel {
   private readonly endingEl: HTMLElement;
   private readonly endingTitleEl: HTMLElement;
   private readonly endingSubtitleEl: HTMLElement;
+  private readonly endingReasonEl: HTMLElement;
   private readonly endingBodyEl: HTMLElement;
   private readonly endingRestartBtn: HTMLButtonElement;
 
@@ -47,6 +47,7 @@ export class AccusationPanel {
     this.endingEl = requireEl("#accuse-ending");
     this.endingTitleEl = requireEl("#accuse-ending-title");
     this.endingSubtitleEl = requireEl("#accuse-ending-subtitle");
+    this.endingReasonEl = requireEl("#accuse-ending-reason");
     this.endingBodyEl = requireEl("#accuse-ending-body");
     this.endingRestartBtn = requireEl<HTMLButtonElement>("#accuse-ending-restart");
 
@@ -113,16 +114,22 @@ export class AccusationPanel {
     this.confirmSuspectEl.textContent = `${suspect.name} — ${suspect.role}`;
 
     this.confirmDossierEl.innerHTML = "";
+    const totalClues = caseData.clues.length;
+    const clueCount = this.state.notebook.listCollected().length;
     this.confirmDossierEl.appendChild(
-      dossierRow("Clues on file", String(this.state.notebook.listCollected().length))
+      dossierRow("Clues on file", `${clueCount} / ${totalClues}`)
     );
     this.confirmDossierEl.appendChild(
       dossierRow("Testimony recorded", String(this.state.dialogue.listTestimony().length))
     );
     const resolved = this.state.listResolvedContradictions();
     const criticalResolved = resolved.filter((c) => c.critical).length;
+    const criticalTotal = contradictions.filter((c) => c.critical).length;
     this.confirmDossierEl.appendChild(
-      dossierRow("Contradictions resolved", `${resolved.length} (${criticalResolved} critical)`)
+      dossierRow(
+        "Contradictions resolved",
+        `${resolved.length} total · ${criticalResolved}/${criticalTotal} critical`
+      )
     );
     const motive = this.state.dialogue.hasFlag("vale-investigating-desmond");
     this.confirmDossierEl.appendChild(
@@ -147,6 +154,29 @@ export class AccusationPanel {
     this.showView("ending");
     this.endingTitleEl.textContent = ending.title;
     this.endingSubtitleEl.textContent = interpolate(ending.subtitle, accusedName);
+
+    this.endingReasonEl.innerHTML = "";
+    const reasonTitle = document.createElement("div");
+    reasonTitle.className = "ending-reason-title";
+    reasonTitle.textContent = "Why this ending";
+    this.endingReasonEl.appendChild(reasonTitle);
+    const reasonList = document.createElement("ul");
+    reasonList.className = "ending-reason-list";
+    for (const row of this.buildReasonRows(ending.id, accusedName)) {
+      const li = document.createElement("li");
+      li.className = row.hit ? "hit" : "miss";
+      const marker = document.createElement("span");
+      marker.className = "ending-reason-marker";
+      marker.textContent = row.hit ? "✓" : "✗";
+      const text = document.createElement("span");
+      text.className = "ending-reason-text";
+      text.textContent = row.text;
+      li.appendChild(marker);
+      li.appendChild(text);
+      reasonList.appendChild(li);
+    }
+    this.endingReasonEl.appendChild(reasonList);
+
     this.endingBodyEl.innerHTML = "";
     for (const line of ending.lines) {
       const p = document.createElement("p");
@@ -154,6 +184,51 @@ export class AccusationPanel {
       this.endingBodyEl.appendChild(p);
     }
     this.endingRestartBtn.focus();
+  }
+
+  /**
+   * Build the bulleted "why this ending" list. Each row is a check the ending
+   * logic cares about; the marker reflects whether the state met it. Reading
+   * the list answers "what would I change next run?"
+   */
+  private buildReasonRows(
+    endingId: string,
+    accusedName: string
+  ): Array<{ hit: boolean; text: string }> {
+    const accusedDesmond = this.pendingSuspectId === "suspect-manager";
+    const bothCriticals = contradictions
+      .filter((c) => c.critical)
+      .every((c) => this.state.dialogue.hasResolvedContradiction(c.id));
+    const knowsMotive = this.state.dialogue.hasFlag("vale-investigating-desmond");
+
+    if (endingId === "ending-wrong") {
+      return [
+        {
+          hit: false,
+          text: `You accused ${accusedName}. Desmond Lark is the actual culprit.`
+        }
+      ];
+    }
+    return [
+      {
+        hit: accusedDesmond,
+        text: accusedDesmond
+          ? "You named Desmond Lark, the correct suspect."
+          : "You named the wrong suspect."
+      },
+      {
+        hit: bothCriticals,
+        text: bothCriticals
+          ? "Both critical contradictions were broken (the pen and the prior complaint)."
+          : "You did not break both critical contradictions (pen, prior complaint)."
+      },
+      {
+        hit: knowsMotive,
+        text: knowsMotive
+          ? "You established Vale's motive for investigating Desmond."
+          : "You did not establish Vale's motive for investigating Desmond."
+      }
+    ];
   }
 
   private showView(view: "choose" | "confirm" | "ending"): void {

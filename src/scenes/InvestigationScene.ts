@@ -11,6 +11,7 @@ import { caseData } from "../data/caseData";
 import type { ClueData, InteractablePlacement } from "../types/game";
 
 const INTERACT_RADIUS = 64;
+const TOAST_MS = 2600;
 
 /**
  * Playable investigation scene. Responsibilities:
@@ -19,6 +20,7 @@ const INTERACT_RADIUS = 64;
  *   - Wire the InteractionSystem to the InvestigationState and UI
  *   - Route Tab to the notebook and Esc to close panels
  *   - Surface the accusation button when the threshold is met
+ *   - Host the start-overlay + help-panel + toast stack
  *
  * Narrative state lives in InvestigationState. The scene only coordinates
  * input/world/UI and hands DialogueSessions to the DialoguePanel.
@@ -34,10 +36,12 @@ export class InvestigationScene extends Phaser.Scene {
   private promptText!: Phaser.GameObjects.Text;
   private highlightGfx!: Phaser.GameObjects.Graphics;
   private currentTarget: InteractableTarget | null = null;
-  private toastEl!: HTMLElement;
+  private toastStackEl!: HTMLElement;
   private objectiveEl!: HTMLElement;
   private accuseBtn!: HTMLButtonElement;
-  private toastTimer?: number;
+  private startOverlayEl!: HTMLElement;
+  private helpPanelEl!: HTMLElement;
+  private startDismissed = false;
 
   constructor() {
     super("InvestigationScene");
@@ -56,9 +60,11 @@ export class InvestigationScene extends Phaser.Scene {
     this.dialoguePanel = new DialoguePanel();
     this.notebookPanel = new NotebookPanel(this.state);
     this.accusationPanel = new AccusationPanel(this.state);
-    this.toastEl = requireEl("#toast");
+    this.toastStackEl = requireEl("#toast-stack");
     this.objectiveEl = requireEl("#objective");
     this.accuseBtn = requireEl<HTMLButtonElement>("#accusation-button");
+    this.startOverlayEl = requireEl("#start-overlay");
+    this.helpPanelEl = requireEl("#help-panel");
     this.accuseBtn.addEventListener("click", () => this.openAccusation());
 
     this.interactionSystem = new InteractionSystem(this, () => ({
@@ -83,9 +89,11 @@ export class InvestigationScene extends Phaser.Scene {
     this.spawnInteractables();
     this.wireInteractionEvents();
     this.wireGlobalKeys();
+    this.wireStartOverlay();
+    this.wireHelpPanel();
 
     this.state.notebook.on("clue-added", (clue: ClueData) => {
-      this.showToast(`Clue added: ${clue.title}`);
+      this.showToast(`Clue added: ${clue.title}`, "clue");
     });
     this.state.dialogue.on(
       "testimony-recorded",
@@ -93,12 +101,12 @@ export class InvestigationScene extends Phaser.Scene {
         const summary = entry.statement.length > 70
           ? `${entry.statement.slice(0, 67)}…`
           : entry.statement;
-        this.showToast(`Testimony recorded: ${summary}`);
+        this.showToast(`Testimony recorded: ${summary}`, "testimony");
       }
     );
     this.state.dialogue.on("contradiction-resolved", (id: string) => {
       const c = this.state.getContradiction(id);
-      if (c) this.showToast(`Contradiction resolved: ${c.resolutionSummary}`);
+      if (c) this.showToast(`Contradiction resolved: ${c.resolutionSummary}`, "contradiction");
     });
 
     this.state.on("state-changed", () => {
@@ -110,14 +118,21 @@ export class InvestigationScene extends Phaser.Scene {
   }
 
   update(): void {
-    const panelOpen =
+    const panelOpen = this.isAnyPanelOpen();
+    this.player.setInputEnabled(!panelOpen && this.startDismissed);
+    this.player.update();
+    if (!panelOpen && this.startDismissed) this.interactionSystem.update();
+    this.renderHighlight();
+  }
+
+  private isAnyPanelOpen(): boolean {
+    return (
       this.dialoguePanel.isOpen() ||
       this.notebookPanel.isOpen() ||
-      this.accusationPanel.isOpen();
-    this.player.setInputEnabled(!panelOpen);
-    this.player.update();
-    if (!panelOpen) this.interactionSystem.update();
-    this.renderHighlight();
+      this.accusationPanel.isOpen() ||
+      this.isHelpOpen() ||
+      !this.startDismissed
+    );
   }
 
   // ------- environment -------
@@ -241,12 +256,7 @@ export class InvestigationScene extends Phaser.Scene {
     });
 
     this.interactionSystem.on("interact", (t: InteractableTarget) => {
-      if (
-        this.dialoguePanel.isOpen() ||
-        this.notebookPanel.isOpen() ||
-        this.accusationPanel.isOpen()
-      )
-        return;
+      if (this.isAnyPanelOpen()) return;
       if (t.data.kind === "evidence") {
         this.handleEvidence(t);
       } else {
@@ -264,7 +274,7 @@ export class InvestigationScene extends Phaser.Scene {
       this.promptText.setVisible(false);
       this.currentTarget = null;
     } else {
-      this.showToast("Nothing new here.");
+      this.showToast("Nothing new here.", "info");
     }
   }
 
@@ -276,9 +286,12 @@ export class InvestigationScene extends Phaser.Scene {
 
     this.player.setInputEnabled(false);
 
+    const alreadyGreeted = this.state.dialogue.hasGreetedSuspect(suspect.id);
+    this.state.dialogue.markSuspectGreeted(suspect.id);
+
     const session: DialogueSession = {
       speakerLabel: `${suspect.name} — ${suspect.role}`,
-      greeting: suspect.greeting.map((text) => ({ text })),
+      greeting: alreadyGreeted ? [] : suspect.greeting.map((text) => ({ text })),
       getChoices: () => {
         const topicChoices: DialogueChoice[] = this.state
           .getVisibleTopics(suspect.id)
@@ -326,12 +339,7 @@ export class InvestigationScene extends Phaser.Scene {
   }
 
   private openAccusation(): void {
-    if (
-      this.dialoguePanel.isOpen() ||
-      this.notebookPanel.isOpen() ||
-      this.accusationPanel.isOpen()
-    )
-      return;
+    if (this.isAnyPanelOpen()) return;
     if (!this.state.canAccuse()) return;
     this.player.setInputEnabled(false);
     this.accusationPanel.open();
@@ -343,12 +351,19 @@ export class InvestigationScene extends Phaser.Scene {
 
     kb.addKey(Phaser.Input.Keyboard.KeyCodes.TAB).on("down", (e: KeyboardEvent) => {
       e.preventDefault?.();
-      if (this.dialoguePanel.isOpen() || this.accusationPanel.isOpen()) return;
+      if (!this.startDismissed) return;
+      if (this.dialoguePanel.isOpen() || this.accusationPanel.isOpen() || this.isHelpOpen()) return;
       this.notebookPanel.toggle();
     });
     kb.addKey(Phaser.Input.Keyboard.KeyCodes.I).on("down", () => {
-      if (this.dialoguePanel.isOpen() || this.accusationPanel.isOpen()) return;
+      if (!this.startDismissed) return;
+      if (this.dialoguePanel.isOpen() || this.accusationPanel.isOpen() || this.isHelpOpen()) return;
       this.notebookPanel.toggle();
+    });
+    kb.addKey(Phaser.Input.Keyboard.KeyCodes.H).on("down", () => {
+      if (!this.startDismissed) return;
+      if (this.dialoguePanel.isOpen() || this.accusationPanel.isOpen()) return;
+      this.toggleHelp();
     });
 
     kb.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).on("down", () => {
@@ -358,6 +373,10 @@ export class InvestigationScene extends Phaser.Scene {
       }
       if (this.notebookPanel.isOpen()) {
         this.notebookPanel.close();
+        return;
+      }
+      if (this.isHelpOpen()) {
+        this.closeHelp();
         return;
       }
       if (this.accusationPanel.isOpen()) this.accusationPanel.close();
@@ -370,6 +389,55 @@ export class InvestigationScene extends Phaser.Scene {
     kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).on("down", advanceIfDialogue);
 
     kb.addCapture(["TAB"]);
+  }
+
+  private wireStartOverlay(): void {
+    const beginBtn = document.getElementById("start-begin");
+    const dismiss = () => this.dismissStart();
+    beginBtn?.addEventListener("click", dismiss);
+    document.addEventListener(
+      "keydown",
+      (e) => {
+        if (!this.startDismissed && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          dismiss();
+        }
+      },
+      { once: false }
+    );
+  }
+
+  private dismissStart(): void {
+    if (this.startDismissed) return;
+    this.startDismissed = true;
+    this.startOverlayEl.classList.add("is-hidden");
+    this.startOverlayEl.setAttribute("aria-hidden", "true");
+  }
+
+  private wireHelpPanel(): void {
+    const close = document.getElementById("help-close");
+    const dismiss = document.getElementById("help-dismiss");
+    close?.addEventListener("click", () => this.closeHelp());
+    dismiss?.addEventListener("click", () => this.closeHelp());
+  }
+
+  private isHelpOpen(): boolean {
+    return !this.helpPanelEl.classList.contains("hidden");
+  }
+
+  private toggleHelp(): void {
+    if (this.isHelpOpen()) this.closeHelp();
+    else this.openHelp();
+  }
+
+  private openHelp(): void {
+    this.helpPanelEl.classList.remove("hidden");
+    this.helpPanelEl.setAttribute("aria-hidden", "false");
+  }
+
+  private closeHelp(): void {
+    this.helpPanelEl.classList.add("hidden");
+    this.helpPanelEl.setAttribute("aria-hidden", "true");
   }
 
   private renderHighlight(): void {
@@ -385,8 +453,9 @@ export class InvestigationScene extends Phaser.Scene {
     const leads = this.state.getVisibleObjectives();
     const nextOpen = leads.find((l) => !l.complete);
     if (!nextOpen) {
-      this.objectiveEl.textContent =
-        "All current leads resolved. Check the notebook for your next move.";
+      this.objectiveEl.textContent = this.state.canAccuse()
+        ? "All leads resolved. When you are ready, press Make Accusation."
+        : "All current leads resolved. Check the notebook for your next move.";
       return;
     }
     this.objectiveEl.textContent = `Lead: ${nextOpen.objective.title}`;
@@ -398,17 +467,24 @@ export class InvestigationScene extends Phaser.Scene {
     this.accuseBtn.disabled = !ready;
   }
 
-  private showToast(message: string): void {
-    this.toastEl.textContent = message;
-    this.toastEl.classList.remove("hidden");
-    requestAnimationFrame(() => this.toastEl.classList.add("show"));
-    if (this.toastTimer !== undefined) window.clearTimeout(this.toastTimer);
-    this.toastTimer = window.setTimeout(() => {
-      this.toastEl.classList.remove("show");
-      this.toastTimer = window.setTimeout(() => {
-        this.toastEl.classList.add("hidden");
-      }, 260);
-    }, 2400);
+  /**
+   * Append one toast onto the stack. Each entry auto-dismisses; multiple
+   * entries stack vertically so a burst of events (e.g. a contradiction that
+   * also records new testimony) doesn't clobber the last message.
+   */
+  private showToast(
+    message: string,
+    kind: "clue" | "testimony" | "contradiction" | "info" = "info"
+  ): void {
+    const entry = document.createElement("div");
+    entry.className = `toast-entry toast-${kind}`;
+    entry.textContent = message;
+    this.toastStackEl.appendChild(entry);
+    requestAnimationFrame(() => entry.classList.add("show"));
+    window.setTimeout(() => {
+      entry.classList.remove("show");
+      window.setTimeout(() => entry.remove(), 260);
+    }, TOAST_MS);
   }
 }
 

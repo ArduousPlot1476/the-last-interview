@@ -11,6 +11,15 @@ export class DialogueState extends Phaser.Events.EventEmitter {
   private readonly flags = new Set<string>();
   private readonly heardTopics = new Set<string>();
   private readonly testimony = new Map<string, TestimonyEntry>();
+  private readonly greetedSuspects = new Set<string>();
+
+  hasGreetedSuspect(suspectId: string): boolean {
+    return this.greetedSuspects.has(suspectId);
+  }
+
+  markSuspectGreeted(suspectId: string): void {
+    this.greetedSuspects.add(suspectId);
+  }
 
   setFlag(flag: string): boolean {
     if (this.flags.has(flag)) return false;

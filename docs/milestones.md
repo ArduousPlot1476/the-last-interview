@@ -1,6 +1,6 @@
 # Milestones
 
-## Milestone 1 — Exploration & interaction shell (current build)
+## Milestone 1 — Exploration & interaction shell ✓
 
 **Goal:** playable room exploration and interaction shell.
 
@@ -9,27 +9,18 @@
 - [x] Phaser 3 + TypeScript + Vite project compiles and runs.
 - [x] One playable scene with a hotel lobby and a back office.
 - [x] Top-down player movement (WASD / arrows) with wall collision.
-- [x] At least 3 evidence hotspots in the world (currently 5).
-- [x] At least 3 suspect interaction points (currently 3).
+- [x] At least 3 evidence hotspots in the world (shipped with 5).
+- [x] At least 3 suspect interaction points (shipped with 3).
 - [x] Proximity-based interaction using `E` / `Space`.
-- [x] Dialogue panel opens/closes for suspects (placeholder lines).
+- [x] Dialogue panel opens/closes for suspects.
 - [x] Notebook panel opens with `Tab` and lists collected clues.
 - [x] At least 3 clues collectable in one run.
 - [x] No blocker runtime errors during a short play session.
 - [x] Docs: README, spec, milestones, architecture.
 
-**Test procedure**
-
-1. `npm install && npm run dev`.
-2. Walk the lobby and back office with WASD / arrows.
-3. Approach each hotspot and press `E` — clue should be logged.
-4. Press `Tab` — notebook shows the new clues.
-5. Talk to each suspect — dialogue panel opens, advances, closes.
-6. Verify no console errors during a 3–5 minute playtest.
-
 ---
 
-## Milestone 2 — Conversation & clue state loop (current build)
+## Milestone 2 — Conversation & clue state loop ✓
 
 **Goal:** branching dialogue and meaningful clue gating.
 
@@ -42,22 +33,13 @@
 - [x] Notebook shows evidence + testimony + open leads as distinct sections.
 - [x] HUD surfaces the next open lead.
 
-**Test procedure**
-
-- Run the dev server, start a fresh session.
-- Confirm M1 movement/interaction still works.
-- Talk to each suspect, verify topic choices appear.
-- Collect clues, verify new topics unlock on revisit (e.g. Rosa's log topic after finding the reception log; Desmond's pen topic after the cabinet).
-- Open notebook, verify leads/clues/testimony all populate and update live.
-- Complete a partial run where testimony unlocks further testimony (Ivy → Desmond).
-
 ---
 
-## Milestone 3 — Contradiction & accusation (current build)
+## Milestone 3 — Contradiction & accusation ✓
 
 **Goal:** present evidence against testimony, resolve contradictions, and close the case with one of three endings.
 
-**Case canon (locked at M3):**
+**Case canon (locked at M3, unchanged in M4):**
 
 - Culprit: Desmond Lark.
 - Two critical contradictions (both against Desmond): the broken fountain pen (proves he met Vale after check-in) and Rosa's year-old complaint (proves he knew Vale personally).
@@ -76,22 +58,47 @@
 - [x] Restart button on the ending screen reloads the session.
 - [x] Run is reliably finishable in 10–20 minutes.
 
-**Test procedure**
-
-- From a fresh session, ignore the office entirely, talk only to Rosa and Ivy, grab 3 lobby clues, then accuse Desmond → Insufficient ending.
-- Full path: collect all 5 clues, hear all opening topics, press Desmond with the pen and Rosa's complaint testimony, reach Ivy's source admission (and thereby the `vale-investigating-desmond` flag) → Justice ending.
-- Fresh session, accuse Rosa or Ivy → Wrong ending with the accused's name.
-
 ---
 
-## Milestone 4 — Polish & ship prep
+## Milestone 4 — Polish & ship prep (current build) ✓
 
-**Goal:** clean, readable, ship-ready web build.
+**Goal:** clean, readable, ship-ready web build. No new gameplay scope.
 
 **Checklist**
 
-- [ ] No blocker bugs.
-- [ ] HUD / notebook / dialogue UX passes a usability pass.
-- [ ] Coherent objective flow; player never stuck.
-- [ ] Clean production build deployed (itch.io target).
-- [ ] External sanity playtest pass.
+- [x] **Notebook UX pass:** four tabs (Leads, Evidence, Testimony, Case), a persistent progress strip (clues / testimony / contradictions / accusation readiness), and testimony grouped by suspect with per-group challenged counts.
+- [x] **Contradiction clarity:**
+  - Challenge choices rendered in their own "Challenges" group in dialogue, with a red `⚑ CHALLENGE` tag; regular topics tagged `ASK` / `✓ ASKED`.
+  - Contradicted testimony dimmed and struck-through in the notebook, with a `⚑ Challenged` badge.
+  - Resolved critical contradictions visually distinct from supporting ones in the notebook.
+- [x] **Ending summary clarity:** every ending screen opens with a "Why this ending" checklist — what was hit and what was missed (accused the right person? both critical contradictions? motive?). Reading it answers "what would I change next run?".
+- [x] **Friction fixes:**
+  - Repeat-visit greeting fatigue removed (`DialogueState.hasGreetedSuspect`).
+  - Toast burst handling: stacked toasts instead of a single element that gets clobbered on rapid events.
+  - Input/focus: notebook `Tab`/`I` and help `H` are gated while any other overlay is open; `Esc` unwinds the top overlay.
+- [x] **Onboarding / clarity:**
+  - Start overlay on load with pitch, controls, and a Begin button (dismisses on click / `Enter` / `Space`).
+  - In-game help panel (`H`) with controls and a short "how investigating works" section.
+  - HUD controls hint updated to include `H`.
+  - Objective HUD text now says "All leads resolved. When you are ready, press Make Accusation." once the case is accusable.
+- [x] **Docs refresh:** README, spec.md, milestones.md, architecture.md updated to match shipped state; new `docs/assets.md`, `docs/bugs.md`, `docs/playtest-notes.md`.
+- [x] **Release / shipping:** smoke-test checklist and static + itch.io deployment instructions in the README.
+- [x] **Build health:** `npm run typecheck` clean, `npm run build` clean.
+
+**Test procedure (M4-specific)**
+
+- From a fresh session: the start overlay appears. Dismiss it with Enter.
+- Open the notebook before doing anything — it renders; progress strip reads `0/5 · 0 · 0/3 (crit 0/2) · Locked`.
+- Play the Insufficient run: grab three lobby clues, hear the openings, resolve one critical contradiction (pen OR complaint). Accuse Desmond. Ending shows "Why this ending" with one hit (named Desmond) and two misses.
+- Refresh. Play the Justice run per the README route. Ending shows all three hits.
+- Refresh. Accuse Ivy from the thinnest viable state. Ending shows one miss row naming Desmond as the real culprit.
+- Verify repeat suspect visits skip the greeting.
+- Verify quickly picking up a clue → then recording testimony produces two stacked toasts, not one.
+
+**Not in M4 (explicit non-goals)**
+
+- Real character or environment art.
+- Audio / ambient sound.
+- A second case, new suspects, new clues, new endings.
+- Save / load; localStorage persistence.
+- Mobile / touch / gamepad support.

@@ -20,6 +20,7 @@
             <span><kbd>WASD</kbd>/<kbd>Arrows</kbd> move</span>
             <span><kbd>E</kbd>/<kbd>Space</kbd> interact</span>
             <span><kbd>Tab</kbd> notebook</span>
+            <span><kbd>H</kbd> help</span>
             <span><kbd>Esc</kbd> close</span>
           </div>
         </div>
@@ -33,7 +34,16 @@
           </div>
           <div class="panel-body">
             <div id="dialogue-line" class="dialogue-line"></div>
-            <ul id="dialogue-choices" class="dialogue-choices hidden"></ul>
+            <div id="dialogue-choices-wrap" class="dialogue-choices-wrap hidden">
+              <div id="dialogue-choices-challenges" class="dialogue-choice-group hidden">
+                <div class="dialogue-choice-group-label">Challenges</div>
+                <ul id="dialogue-choices-challenges-list" class="dialogue-choices"></ul>
+              </div>
+              <div id="dialogue-choices-topics" class="dialogue-choice-group">
+                <div class="dialogue-choice-group-label">Questions</div>
+                <ul id="dialogue-choices-topics-list" class="dialogue-choices"></ul>
+              </div>
+            </div>
             <div id="dialogue-evidence" class="evidence-picker hidden">
               <div id="dialogue-evidence-prompt" class="evidence-prompt"></div>
               <ul id="dialogue-evidence-list" class="evidence-list"></ul>
@@ -57,24 +67,47 @@
             <span>Investigator's Notebook</span>
             <button id="notebook-close" class="close-btn" aria-label="Close">×</button>
           </div>
+          <div id="notebook-progress" class="notebook-progress">
+            <span class="progress-chip" data-kind="clues">Evidence <strong id="progress-clues">0/0</strong></span>
+            <span class="progress-chip" data-kind="testimony">Testimony <strong id="progress-testimony">0</strong></span>
+            <span class="progress-chip" data-kind="contradictions">Contradictions <strong id="progress-contradictions">0/0</strong></span>
+            <span class="progress-chip" data-kind="accuse">Accusation <strong id="progress-accuse">Locked</strong></span>
+          </div>
+          <nav id="notebook-tabs" class="notebook-tabs" role="tablist">
+            <button class="notebook-tab is-active" data-tab="leads" role="tab" type="button">Leads</button>
+            <button class="notebook-tab" data-tab="evidence" role="tab" type="button">Evidence</button>
+            <button class="notebook-tab" data-tab="testimony" role="tab" type="button">Testimony</button>
+            <button class="notebook-tab" data-tab="case" role="tab" type="button">Case</button>
+          </nav>
           <div class="panel-body">
-            <h3 class="section-title">Case</h3>
-            <div id="notebook-case" class="notebook-case"></div>
+            <section class="notebook-tab-panel is-active" data-tab="leads">
+              <h3 class="section-title">Open Leads</h3>
+              <ul id="notebook-leads" class="notebook-list"></ul>
 
-            <h3 class="section-title">Open Leads</h3>
-            <ul id="notebook-leads" class="notebook-list"></ul>
+              <h3 class="section-title">Contradictions Resolved</h3>
+              <ul id="notebook-contradictions" class="notebook-list"></ul>
+            </section>
 
-            <h3 class="section-title">Suspects</h3>
-            <ul id="notebook-suspects" class="notebook-list"></ul>
+            <section class="notebook-tab-panel" data-tab="evidence" hidden>
+              <h3 class="section-title">Evidence Collected</h3>
+              <ul id="notebook-clues" class="notebook-list"></ul>
+            </section>
 
-            <h3 class="section-title">Evidence Collected</h3>
-            <ul id="notebook-clues" class="notebook-list"></ul>
+            <section class="notebook-tab-panel" data-tab="testimony" hidden>
+              <h3 class="section-title">Testimony Recorded</h3>
+              <div id="notebook-testimony-help" class="notebook-help">
+                <span class="testimony-badge challenged">⚑ Challenged</span> marks a statement you have already broken with evidence.
+              </div>
+              <div id="notebook-testimony" class="notebook-testimony"></div>
+            </section>
 
-            <h3 class="section-title">Testimony Recorded</h3>
-            <ul id="notebook-testimony" class="notebook-list"></ul>
+            <section class="notebook-tab-panel" data-tab="case" hidden>
+              <h3 class="section-title">Case</h3>
+              <div id="notebook-case" class="notebook-case"></div>
 
-            <h3 class="section-title">Contradictions Resolved</h3>
-            <ul id="notebook-contradictions" class="notebook-list"></ul>
+              <h3 class="section-title">Suspects</h3>
+              <ul id="notebook-suspects" class="notebook-list"></ul>
+            </section>
           </div>
         </div>
       </div>
@@ -115,6 +148,7 @@
             <div id="accuse-ending" class="hidden">
               <h2 id="accuse-ending-title" class="ending-title">—</h2>
               <div id="accuse-ending-subtitle" class="ending-subtitle">—</div>
+              <div id="accuse-ending-reason" class="ending-reason"></div>
               <div id="accuse-ending-body" class="ending-body"></div>
               <div class="accuse-footer">
                 <button id="accuse-ending-restart" class="primary-btn" type="button">
@@ -126,7 +160,54 @@
         </div>
       </div>
 
-      <div id="toast" class="toast hidden"></div>
+      <div id="help-panel" class="panel hidden" aria-hidden="true">
+        <div class="panel-inner help-inner">
+          <div class="panel-header">
+            <span>How to play</span>
+            <button id="help-close" class="close-btn" aria-label="Close">×</button>
+          </div>
+          <div class="panel-body">
+            <h3 class="section-title">Controls</h3>
+            <ul class="help-list">
+              <li><kbd>WASD</kbd> or <kbd>Arrows</kbd> — move the detective</li>
+              <li><kbd>E</kbd> / <kbd>Space</kbd> — interact, advance dialogue</li>
+              <li><kbd>Tab</kbd> / <kbd>I</kbd> — toggle the notebook</li>
+              <li><kbd>H</kbd> or <kbd>?</kbd> — this help</li>
+              <li><kbd>Esc</kbd> — close any open panel</li>
+            </ul>
+
+            <h3 class="section-title">Investigating</h3>
+            <ul class="help-list">
+              <li>A gold ring highlights the nearest object. Walk up until the <kbd>E</kbd> prompt appears.</li>
+              <li>Every clue and statement goes into your notebook. Open it any time with <kbd>Tab</kbd>.</li>
+              <li>If a suspect has said something the evidence contradicts, a red <strong>⚑ Challenge</strong> option appears in their dialogue. Pick it, then choose the item that breaks their story.</li>
+              <li>The <strong>Make Accusation</strong> button unlocks once you've heard every suspect out, collected enough clues, and caught at least one critical lie. The stronger your case, the better the ending.</li>
+            </ul>
+          </div>
+          <div class="panel-footer">
+            <button id="help-dismiss" class="primary-btn" type="button">Got it</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="start-overlay" class="start-overlay" aria-hidden="false">
+        <div class="start-inner">
+          <div class="start-eyebrow">A mystery in one evening</div>
+          <h1 class="start-title">The Last Interview</h1>
+          <p class="start-pitch">
+            A journalist is dead in Suite 409. You have one shift to walk the Meridian, read the room, and press three suspects until a single unbroken story survives.
+          </p>
+          <div class="start-controls">
+            <div><kbd>WASD</kbd> / <kbd>Arrows</kbd> — move</div>
+            <div><kbd>E</kbd> / <kbd>Space</kbd> — interact / advance</div>
+            <div><kbd>Tab</kbd> — notebook &nbsp;·&nbsp; <kbd>H</kbd> — help &nbsp;·&nbsp; <kbd>Esc</kbd> — close</div>
+          </div>
+          <button id="start-begin" class="primary-btn start-begin" type="button">Begin the Investigation</button>
+          <div class="start-footnote">10–20 minutes · keyboard + mouse · headphones optional</div>
+        </div>
+      </div>
+
+      <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

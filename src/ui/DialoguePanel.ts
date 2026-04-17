@@ -46,14 +46,17 @@ type Mode = "lines" | "choices" | "evidence";
 /**
  * DOM controller for the dialogue overlay. Handles three modes:
  *   - "lines":    walk a sequence of lines with Continue, then call a hook
- *   - "choices":  present topic + contradiction choices
+ *   - "choices":  present topic + contradiction choices in two labelled groups
  *   - "evidence": evidence picker for a contradiction
  */
 export class DialoguePanel {
   private readonly root: HTMLElement;
   private readonly speakerEl: HTMLElement;
   private readonly lineEl: HTMLElement;
-  private readonly choicesEl: HTMLElement;
+  private readonly choicesWrap: HTMLElement;
+  private readonly challengesGroup: HTMLElement;
+  private readonly challengesList: HTMLElement;
+  private readonly topicsList: HTMLElement;
   private readonly evidenceEl: HTMLElement;
   private readonly evidencePromptEl: HTMLElement;
   private readonly evidenceListEl: HTMLElement;
@@ -73,7 +76,10 @@ export class DialoguePanel {
     this.root = requireEl("#dialogue-panel");
     this.speakerEl = requireEl("#dialogue-speaker");
     this.lineEl = requireEl("#dialogue-line");
-    this.choicesEl = requireEl("#dialogue-choices");
+    this.choicesWrap = requireEl("#dialogue-choices-wrap");
+    this.challengesGroup = requireEl("#dialogue-choices-challenges");
+    this.challengesList = requireEl("#dialogue-choices-challenges-list");
+    this.topicsList = requireEl("#dialogue-choices-topics-list");
     this.evidenceEl = requireEl("#dialogue-evidence");
     this.evidencePromptEl = requireEl("#dialogue-evidence-prompt");
     this.evidenceListEl = requireEl("#dialogue-evidence-list");
@@ -125,7 +131,7 @@ export class DialoguePanel {
     this.lineIndex = 0;
     this.onLinesEnd = onEnd;
 
-    this.choicesEl.classList.add("hidden");
+    this.choicesWrap.classList.add("hidden");
     this.evidenceEl.classList.add("hidden");
     this.lineEl.classList.remove("hidden");
     this.leaveBtn.classList.add("hidden");
@@ -168,7 +174,7 @@ export class DialoguePanel {
     this.evidenceEl.classList.add("hidden");
     this.nextBtn.classList.add("hidden");
     this.leaveBtn.classList.remove("hidden");
-    this.choicesEl.classList.remove("hidden");
+    this.choicesWrap.classList.remove("hidden");
     this.renderChoices();
     this.leaveBtn.focus();
   }
@@ -176,30 +182,59 @@ export class DialoguePanel {
   private renderChoices(): void {
     if (!this.session) return;
     const choices = this.session.getChoices();
-    this.choicesEl.innerHTML = "";
+    this.challengesList.innerHTML = "";
+    this.topicsList.innerHTML = "";
 
-    if (choices.length === 0) {
+    const challenges = choices.filter((c) => c.kind === "contradiction");
+    const topics = choices.filter((c) => c.kind === "topic");
+
+    this.challengesGroup.classList.toggle("hidden", challenges.length === 0);
+
+    for (const choice of challenges) {
+      this.challengesList.appendChild(this.buildChoiceLi(choice));
+    }
+    if (topics.length === 0) {
       const empty = document.createElement("li");
       empty.className = "dialogue-choice empty";
       empty.textContent = "— no more questions for now —";
-      this.choicesEl.appendChild(empty);
-      return;
+      this.topicsList.appendChild(empty);
+    } else {
+      for (const choice of topics) {
+        this.topicsList.appendChild(this.buildChoiceLi(choice));
+      }
     }
+  }
 
-    for (const choice of choices) {
-      const li = document.createElement("li");
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "dialogue-choice-btn";
-      if (choice.kind === "contradiction") btn.classList.add("challenge");
-      if (choice.heard) btn.classList.add("heard");
-      const prefix =
-        choice.kind === "contradiction" ? "⚑ " : choice.heard ? "✓ " : "";
-      btn.textContent = `${prefix}${choice.label}`;
-      btn.addEventListener("click", () => this.selectChoice(choice));
-      li.appendChild(btn);
-      this.choicesEl.appendChild(li);
+  private buildChoiceLi(choice: DialogueChoice): HTMLLIElement {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "dialogue-choice-btn";
+    if (choice.kind === "contradiction") btn.classList.add("challenge");
+    if (choice.heard) btn.classList.add("heard");
+    const label = document.createElement("span");
+    label.className = "dialogue-choice-label";
+    const prefix = document.createElement("span");
+    prefix.className = "dialogue-choice-prefix";
+    if (choice.kind === "contradiction") {
+      prefix.classList.add("challenge-prefix");
+      prefix.textContent = "⚑ CHALLENGE";
+    } else if (choice.heard) {
+      prefix.classList.add("heard-prefix");
+      prefix.textContent = "✓ ASKED";
+    } else {
+      prefix.classList.add("new-prefix");
+      prefix.textContent = "ASK";
     }
+    const body = document.createElement("span");
+    body.className = "dialogue-choice-body";
+    body.textContent = choice.label;
+    label.appendChild(prefix);
+    label.appendChild(body);
+    btn.appendChild(label);
+    btn.addEventListener("click", () => this.selectChoice(choice));
+    li.appendChild(btn);
+    return li;
   }
 
   private selectChoice(choice: DialogueChoice): void {
@@ -225,7 +260,7 @@ export class DialoguePanel {
     const { prompt, options } = this.session.beginContradiction(contradictionId);
 
     this.lineEl.classList.add("hidden");
-    this.choicesEl.classList.add("hidden");
+    this.choicesWrap.classList.add("hidden");
     this.nextBtn.classList.add("hidden");
     this.leaveBtn.classList.add("hidden");
     this.evidenceEl.classList.remove("hidden");
