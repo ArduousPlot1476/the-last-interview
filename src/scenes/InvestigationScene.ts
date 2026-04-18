@@ -9,6 +9,17 @@ import { AccusationPanel } from "../ui/AccusationPanel";
 import { interactables, playerSpawn, walls } from "../data/interactables";
 import { caseData } from "../data/caseData";
 import type { ClueData, InteractablePlacement } from "../types/game";
+import { DEPTH, THEME } from "../render/VisualTheme";
+import { drawEnvironment } from "../render/EnvironmentArt";
+import {
+  addDoorwayPulse,
+  addDustMotes,
+  addHotspotHalo,
+  addIdleBob,
+  addLampFlicker,
+  attachShadow,
+  drawVignette
+} from "../render/SceneFx";
 
 const INTERACT_RADIUS = 64;
 const TOAST_MS = 2600;
@@ -36,6 +47,7 @@ export class InvestigationScene extends Phaser.Scene {
   private promptText!: Phaser.GameObjects.Text;
   private highlightGfx!: Phaser.GameObjects.Graphics;
   private currentTarget: InteractableTarget | null = null;
+  private readonly evidenceHalos = new Map<string, Phaser.GameObjects.Image>();
   private toastStackEl!: HTMLElement;
   private objectiveEl!: HTMLElement;
   private accuseBtn!: HTMLButtonElement;
@@ -50,11 +62,13 @@ export class InvestigationScene extends Phaser.Scene {
   create(): void {
     this.physics.world.setBounds(0, 60, GAME_WIDTH, GAME_HEIGHT - 60);
 
-    this.drawEnvironment();
+    this.buildEnvironment();
     const wallGroup = this.buildWallColliders();
 
     this.player = new Player(this, playerSpawn.x, playerSpawn.y, "player");
+    this.player.sprite.setDepth(DEPTH.player);
     this.physics.add.collider(this.player.sprite, wallGroup);
+    attachShadow(this, this.player.sprite, 16, 0.8);
 
     this.state = new InvestigationState();
     this.dialoguePanel = new DialoguePanel();
@@ -73,16 +87,18 @@ export class InvestigationScene extends Phaser.Scene {
     }));
 
     this.highlightGfx = this.add.graphics();
-    this.highlightGfx.setDepth(4);
+    this.highlightGfx.setDepth(DEPTH.highlight);
 
     this.promptText = this.add.text(0, 0, "", {
       fontFamily: "Inter, system-ui, sans-serif",
       fontSize: "13px",
-      color: "#e6edf3",
-      backgroundColor: "#0e1116cc",
-      padding: { x: 6, y: 3 }
+      color: "#f3e4c0",
+      backgroundColor: "#0b0d12e6",
+      padding: { x: 8, y: 4 },
+      stroke: "#000000",
+      strokeThickness: 2
     });
-    this.promptText.setDepth(11);
+    this.promptText.setDepth(DEPTH.prompt);
     this.promptText.setOrigin(0.5, 1);
     this.promptText.setVisible(false);
 
@@ -137,52 +153,14 @@ export class InvestigationScene extends Phaser.Scene {
 
   // ------- environment -------
 
-  private drawEnvironment(): void {
-    const floors = this.add.graphics();
-    floors.fillStyle(0x1a2028, 1);
-    floors.fillRect(20, 80, 610, 520);
-    floors.fillStyle(0x1f2730, 1);
-    floors.fillRect(650, 80, 290, 520);
+  private buildEnvironment(): void {
+    const { lamps, doorwayGlow } = drawEnvironment(this);
+    for (const lamp of lamps) addLampFlicker(this, lamp);
+    addDoorwayPulse(this, doorwayGlow);
 
-    floors.lineStyle(1, 0x232b35, 1);
-    for (let x = 20; x <= 940; x += 40) {
-      floors.lineBetween(x, 80, x, 600);
-    }
-    for (let y = 80; y <= 600; y += 40) {
-      floors.lineBetween(20, y, 940, y);
-    }
-
-    this.add
-      .text(325, 90, "HOTEL LOBBY", {
-        fontFamily: "Inter, system-ui, sans-serif",
-        fontSize: "12px",
-        color: "#5b6572",
-        fontStyle: "bold"
-      })
-      .setOrigin(0.5, 0);
-    this.add
-      .text(795, 90, "BACK OFFICE", {
-        fontFamily: "Inter, system-ui, sans-serif",
-        fontSize: "12px",
-        color: "#5b6572",
-        fontStyle: "bold"
-      })
-      .setOrigin(0.5, 0);
-
-    this.add
-      .text(640, 330, "▸", {
-        fontSize: "16px",
-        color: "#d0a656"
-      })
-      .setOrigin(0.5, 0.5);
-
-    const wallGfx = this.add.graphics();
-    wallGfx.fillStyle(0x2c333d, 1);
-    wallGfx.lineStyle(1, 0x3a424d, 1);
-    for (const w of walls) {
-      wallGfx.fillRect(w.x, w.y, w.width, w.height);
-      wallGfx.strokeRect(w.x, w.y, w.width, w.height);
-    }
+    // Ambient dust motes + final vignette sit on top of everything.
+    addDustMotes(this);
+    drawVignette(this);
   }
 
   private buildWallColliders(): Phaser.Physics.Arcade.StaticGroup {
@@ -201,6 +179,8 @@ export class InvestigationScene extends Phaser.Scene {
     return group;
   }
 
+  // ------- interactable rendering -------
+
   // ------- interactables -------
 
   private spawnInteractables(): void {
@@ -217,26 +197,51 @@ export class InvestigationScene extends Phaser.Scene {
 
   private buildInteractableSprite(data: InteractablePlacement): Phaser.GameObjects.Container {
     const container = this.add.container(data.x, data.y);
-    container.setDepth(5);
+    container.setDepth(data.kind === "suspect" ? DEPTH.character : DEPTH.prop);
 
     if (data.kind === "evidence") {
+      // Warm brass halo underneath to cue "interactable"
+      const halo = addHotspotHalo(this, data.x, data.y);
+      if (halo) this.evidenceHalos.set(data.id, halo);
+
       const icon = this.add.image(0, 0, "evidence-icon");
-      icon.setScale(1.1);
+      icon.setScale(1);
       container.add(icon);
+
+      // Gentle up-and-down float for evidence pips
+      this.tweens.add({
+        targets: icon,
+        y: -3,
+        duration: 1800 + Math.random() * 600,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut"
+      });
     } else if (data.kind === "suspect") {
-      const icon = this.add.image(0, -2, "suspect-icon");
+      // Soft drop shadow under suspect
+      const shadow = this.add.image(0, 20, "fx-shadow");
+      shadow.setAlpha(0.55);
+      container.add(shadow);
+
+      const icon = this.add.image(0, -4, "suspect-icon");
       const suspect = caseData.suspects.find((s) => s.id === data.suspectId);
       if (suspect?.portraitTint !== undefined) icon.setTint(suspect.portraitTint);
-      icon.setScale(1.2);
+      icon.setScale(1.05);
       container.add(icon);
+
+      // Subtle idle breathing
+      addIdleBob(this, icon, 1.2, 2400 + Math.random() * 600);
     }
 
-    const label = this.add.text(0, 22, data.label, {
+    const label = this.add.text(0, 24, data.label, {
       fontFamily: "Inter, system-ui, sans-serif",
       fontSize: "11px",
-      color: "#8b949e"
+      color: THEME.labelText,
+      stroke: "#000000",
+      strokeThickness: 3
     });
     label.setOrigin(0.5, 0);
+    label.setAlpha(0.85);
     container.add(label);
 
     return container;
@@ -271,6 +276,16 @@ export class InvestigationScene extends Phaser.Scene {
     if (clue) {
       this.interactionSystem.consume(t.data.id);
       t.sprite.setAlpha(0.45);
+      const halo = this.evidenceHalos.get(t.data.id);
+      if (halo) {
+        this.tweens.add({
+          targets: halo,
+          alpha: 0,
+          duration: 300,
+          onComplete: () => halo.destroy()
+        });
+        this.evidenceHalos.delete(t.data.id);
+      }
       this.promptText.setVisible(false);
       this.currentTarget = null;
     } else {
@@ -443,10 +458,15 @@ export class InvestigationScene extends Phaser.Scene {
   private renderHighlight(): void {
     this.highlightGfx.clear();
     if (!this.currentTarget) return;
-    const { x, y } = this.currentTarget.data;
-    this.highlightGfx.lineStyle(2, 0xd0a656, 0.9);
-    this.highlightGfx.strokeCircle(x, y, 22);
-    this.promptText.setPosition(x, y - 26);
+    const { x, y, kind } = this.currentTarget.data;
+    // Subtle pulsing radius so the ring feels alive but not distracting.
+    const pulse = 1 + Math.sin(this.time.now / 260) * 0.06;
+    const baseR = kind === "suspect" ? 26 : 22;
+    this.highlightGfx.lineStyle(1, THEME.brassDeep, 0.55);
+    this.highlightGfx.strokeCircle(x, y, (baseR + 4) * pulse);
+    this.highlightGfx.lineStyle(2, THEME.brassBright, 0.95);
+    this.highlightGfx.strokeCircle(x, y, baseR * pulse);
+    this.promptText.setPosition(x, y - 30);
   }
 
   private refreshObjectiveHud(): void {
